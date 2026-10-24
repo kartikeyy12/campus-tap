@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student | Campus Card</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body>
+<main class="wrap narrow">
+  <div id="login"></div>
+
+  <div id="dash" hidden>
+    <header class="top">
+      <span class="brand">Campus Card</span>
+      <span class="spacer"></span>
+      <button class="btn sm ghost" id="out" type="button">Sign out</button>
+    </header>
+
+    <div class="who"><h1 id="who">Student</h1><div class="sub mono muted" id="roll"></div></div>
+
+    <section class="sec">
+      <span class="label">Balance</span>
+      <div class="big" id="bal">&nbsp;</div>
+      <div class="small muted" style="margin:16px 0 8px">Spent today <span id="spent" class="num"></span> of <span id="cap" class="num"></span></div>
+      <div class="progress" id="prog"><i></i></div>
+    </section>
+
+    <section class="sec">
+      <h2>Card</h2>
+      <div class="row between"><span class="badge" id="cstat">&nbsp;</span><span class="mono small muted" id="cuid"></span></div>
+      <p class="small muted" id="chelp" style="margin:10px 0 0"></p>
+      <button class="btn danger block" id="blk" type="button" style="margin-top:14px" hidden>Block card</button>
+      <form id="unb" hidden style="margin-top:14px" autocomplete="off">
+        <label class="field">PIN
+          <input class="input" id="unb-pin" type="password" inputmode="numeric" required>
+        </label>
+        <button class="btn primary block" type="submit">Unblock card</button>
+      </form>
+    </section>
+
+    <section class="sec">
+      <h2>Add credit</h2>
+      <div class="chips" id="chips">
+        <button class="chip" type="button" data-amt="100">&#8377;100</button>
+        <button class="chip" type="button" data-amt="200">&#8377;200</button>
+        <button class="chip" type="button" data-amt="500">&#8377;500</button>
+      </div>
+      <p class="small muted" style="margin:12px 0 0">Demo credit. No real money moves.</p>
+    </section>
+
+    <section class="sec">
+      <h2>Activity</h2>
+      <ul class="list" id="hist"></ul>
+    </section>
+  </div>
+</main>
+
+<script src="/static/common.js"></script>
+<script>
+let stop = null;
+
+function showLogin() {
+  if (stop) { stop(); stop = null; }
+  $("#dash").hidden = true;
+  $("#login").hidden = false;
+  mountLogin({ role: "student", title: "Sign in", hint: "Use your roll number and PIN.",
+               identLabel: "Roll number", onDone: showDash });
+}
+
+function showDash() {
+  $("#login").hidden = true;
+  $("#login").innerHTML = "";
+  $("#dash").hidden = false;
+  if (stop) stop();
+  stop = every(2000, refresh);
+}
+
+async function refresh() {
+  let me;
+  try { me = await call("student", "/api/student/me"); }
+  catch (e) { if (e instanceof AuthError) showLogin(); throw e; }
+  render(me);
+}
+
+const KIND = { payment: "Payment", topup: "Credit added", attendance: "Attendance", meal: "Meal" };
+
+function render(me) {
+  $("#who").textContent = me.name;
+  $("#roll").textContent = me.roll_no;
+  $("#bal").textContent = rupees(me.balance);
+  $("#spent").textContent = rupees(me.spent_today);
+  $("#cap").textContent = rupees(me.limits.daily_cap);
+  const pct = Math.min(100, Math.round((me.spent_today / me.limits.daily_cap) * 100));
+  $("#prog i").style.width = pct + "%";
+  $("#prog").classList.toggle("warn", pct >= 80);
+
+  const card = me.card, badge = $("#cstat");
+  badge.className = "badge";
+  if (!card) {
+    badge.textContent = "No card yet"; badge.classList.add("warn");
+    $("#cuid").textContent = "";
+    $("#blk").hidden = true; $("#unb").hidden = true;
+    $("#chelp").textContent = "No card is linked yet. Ask the admin to register it.";
+  } else if (card.status === "blocked") {
+    badge.textContent = "Blocked"; badge.classList.add("bad");
+    $("#cuid").textContent = "ending " + card.uid_tail;
+    $("#blk").hidden = true; $("#unb").hidden = false;
+    $("#chelp").textContent = "Blocked. Enter your PIN to use it again.";
+  } else {
+    badge.textContent = "Active"; badge.classList.add("ok");
+    $("#cuid").textContent = "ending " + card.uid_tail;
+    $("#blk").hidden = false; $("#unb").hidden = true;
+    $("#chelp").textContent = "If you lose it, block it here. It stops working on the next tap.";
+  }
+
+  const ul = $("#hist");
+  if (!me.history.length) { ul.innerHTML = '<li class="muted">No activity yet. Tap your card at a reader.</li>'; return; }
+  ul.innerHTML = me.history.map((h) => {
+    const amt = h.amount == null ? "" :
+      `<span class="${h.amount > 0 ? "plus" : "minus"} num">${h.amount > 0 ? "+" : "−"}${rupees(Math.abs(h.amount))}</span>`;
+    return `<li><div class="what"><div><b>${esc(KIND[h.type] || h.type)}</b></div>
+      <div class="small muted">${esc(h.text)} &middot; ${esc(fmtDay(h.ts))}</div></div>${amt}</li>`;
+  }).join("");
+}
+
+$("#out").addEventListener("click", () => logout("student", showLogin));
+
+$("#blk").addEventListener("click", async () => {
+  const b = $("#blk"); b.disabled = true;
+  try { await call("student", "/api/student/card/block", "POST", { blocked: true }); toast("Card blocked"); await refresh(); }
+  catch (e) { toast(e.message, true); }
+  finally { b.disabled = false; }
+});
+
+$("#unb").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    await call("student", "/api/student/card/block", "POST", { blocked: false, pin: $("#unb-pin").value });
+    $("#unb-pin").value = "";
+    toast("Card unblocked");
+    await refresh();
+  } catch (e) { toast(e.message, true); }
+});
+
+$("#chips").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-amt]");
+  if (!btn) return;
+  btn.disabled = true;
+  try { const r = await call("student", "/api/student/topup", "POST", { amount: Number(btn.dataset.amt) }); toast("Balance " + rupees(r.balance)); await refresh(); }
+  catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; }
+});
+
+if (store.get("campus.token.student")) showDash(); else showLogin();
+</script>
+</body>
+</html>

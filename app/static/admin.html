@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin | Campus Card</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body>
+<main class="wrap">
+  <div id="login"></div>
+
+  <div id="dash" hidden>
+    <header class="top">
+      <span class="brand">Campus Card</span><span class="sub">Admin</span>
+      <span class="spacer"></span>
+      <span class="badge" id="ledger" title="Every payment must add up to zero">Ledger</span>
+      <span class="sub">Server time <span class="mono" id="clock">--:--:--</span> IST</span>
+      <button class="btn sm ghost" id="out" type="button">Sign out</button>
+    </header>
+
+    <div id="warns"></div>
+
+    <div class="figures" id="stats"></div>
+
+    <div class="grid console" style="margin-top:22px">
+      <section>
+        <h2 class="label">Readers</h2>
+        <div id="devs"></div>
+      </section>
+      <section>
+        <h2 class="label">Live activity</h2>
+        <div class="feed scroll"><table class="t"><thead><tr><th>Time</th><th>Reader</th><th>Who</th><th>Result</th><th>Detail</th></tr></thead><tbody id="feed"></tbody></table></div>
+      </section>
+    </div>
+
+    <div class="grid two" style="margin-top:34px">
+      <section>
+        <h2 class="label">Register a card</h2>
+        <div id="unreg"></div>
+        <label class="row small muted" style="margin-top:12px"><input type="checkbox" id="replace"> Replace the student's current card</label>
+      </section>
+      <section>
+        <h2 class="label">Students</h2>
+        <div class="scroll"><table class="t"><thead><tr><th>Roll</th><th>Name</th><th>Card</th></tr></thead><tbody id="studs"></tbody></table></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="/static/common.js"></script>
+<script>
+let stopOv = null, stopFeed = null, lastId = null, vendorKey = "", unregKey = "", studentOpts = "";
+const WARN = new Set(["BAD_TAP", "UNREGISTERED", "IDLE", "NO_SESSION", "NO_CHARGE", "CHARGE_CHANGED", "EXPIRED", "CANCELLED", "ERROR", "DUPLICATE"]);
+const MODE_LABEL = { idle: "Idle", attendance: "Attendance", mess: "Mess", vendor: "Payments" };
+const codeText = (c) => String(c || "").replace(/_/g, " ").toLowerCase();
+
+function showLogin() {
+  if (stopOv) stopOv(); if (stopFeed) stopFeed();
+  stopOv = stopFeed = null;
+  $("#dash").hidden = true; $("#login").hidden = false;
+  mountLogin({ role: "admin", needsIdent: false, title: "Sign in", hint: "Enter the admin password.", onDone: showDash });
+}
+
+function showDash() {
+  $("#login").hidden = true; $("#login").innerHTML = ""; $("#dash").hidden = false;
+  lastId = null; $("#feed").innerHTML = "";
+  if (stopOv) stopOv(); if (stopFeed) stopFeed();
+  stopOv = every(1500, refreshOverview);
+  stopFeed = every(1000, refreshFeed);
+}
+
+function guard(e) { if (e instanceof AuthError) showLogin(); throw e; }
+
+/* ---------------------------------------------------------------- overview */
+async function refreshOverview() {
+  let ov;
+  try { ov = await call("admin", "/api/admin/overview"); } catch (e) { guard(e); }
+  $("#clock").textContent = fmtTime(ov.server_time);
+
+  const lg = $("#ledger");
+  lg.className = "badge " + (ov.ledger.ok ? "ok" : "bad");
+  lg.textContent = ov.ledger.ok ? "Ledger balanced" : "Ledger mismatch";
+  lg.title = `net ${ov.ledger.total}, unbalanced ${ov.ledger.unbalanced_txns}, negative ${ov.ledger.negative_accounts}`;
+
+  $("#warns").innerHTML = (ov.warnings || []).map((w) => `<div class="banner">${esc(w)}</div>`).join("");
+
+  const c = ov.counts;
+  $("#stats").innerHTML = [["Students", c.students], ["Cards", c.cards], ["Blocked", c.blocked], ["Taps", c.taps], ["Denied", c.denied]]
+    .map(([k, v]) => `<div class="fig"><div class="n">${v}</div><div class="k">${k}</div></div>`).join("");
+
+  renderDevices(ov);
+  renderUnregistered(ov);
+  $("#studs").innerHTML = ov.students.map((s) =>
+    `<tr><td class="mono">${esc(s.roll_no)}</td><td>${esc(s.name)}</td><td>${
+      !s.card ? '<span class="badge warn">none</span>' : s.card === "blocked" ? '<span class="badge bad">blocked</span>' : '<span class="badge ok">active</span>'}</td></tr>`).join("");
+}
+
+function ensureDevice(d) {
+  let el = document.querySelector(`[data-dev="${CSS.escape(d.id)}"]`);
+  if (el) return el;
+  el = document.createElement("div");
+  el.className = "reader"; el.dataset.dev = d.id;
+  el.innerHTML = `
+    <div class="row between"><div class="row" style="gap:8px"><span class="dot" data-k="dot"></span><b class="mono" style="font-weight:500">${esc(d.id)}</b></div><span class="badge" data-k="mode"></span></div>
+    <div class="small muted" data-k="status" style="margin:6px 0 12px"></div>
+    <div class="row">
+      <input class="input" data-k="title" placeholder="Class or meal name" maxlength="40" style="flex:1 1 150px" aria-label="Class or meal name">
+      <button class="btn sm primary" type="button" data-act="class">Start class</button>
+      <button class="btn sm primary" type="button" data-act="meal">Start meal</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <select data-k="vendor" style="flex:1 1 150px" aria-label="Vendor"></select>
+      <button class="btn sm" type="button" data-act="vendor">Take payments</button>
+      <button class="btn sm ghost" type="button" data-act="idle">Set idle</button>
+    </div>
+    <details data-k="att" hidden style="margin-top:10px"><summary class="small">Checked in <span data-k="cnt"></span></summary><ul class="list" data-k="attlist"></ul></details>`;
+  $("#devs").appendChild(el);
+  return el;
+}
+
+function renderDevices(ov) {
+  const key = JSON.stringify(ov.vendors);
+  for (const d of ov.devices) {
+    const el = ensureDevice(d);
+    const k = (n) => el.querySelector(`[data-k="${n}"]`);
+    k("dot").className = "dot" + (d.online ? " on" : "");
+    const m = k("mode"); m.textContent = MODE_LABEL[d.mode] || d.mode;
+    m.className = "badge " + (d.mode === "idle" ? "" : "ok");
+    let st = d.online ? "Online" : "Offline, no heartbeat";
+    if (d.session) st += ` · ${d.session.kind === "class" ? "Class" : "Meal"}: ${d.session.title}`;
+    if (d.mode === "vendor") st += ` · ${d.vendor_name || "vendor"}${d.charge ? " · charge " + rupees(d.charge.amount) + " armed" : ""}`;
+    k("status").textContent = st;
+
+    if (vendorKey !== key) {
+      const sel = k("vendor"), cur = sel.value;
+      sel.innerHTML = ov.vendors.map((v) => `<option value="${v.id}">${esc(v.name)}</option>`).join("");
+      if (cur) sel.value = cur;
+    }
+    if (d.vendor_id && document.activeElement !== k("vendor")) k("vendor").value = String(d.vendor_id);
+
+    const det = k("att");
+    if (d.session) {
+      det.hidden = false; k("cnt").textContent = `(${d.session.count})`;
+      if (det.open && (el._count !== d.session.count || el._sid !== d.session.id)) loadAttendance(el, d.session.id);
+      el._count = d.session.count; el._sid = d.session.id;
+    } else { det.hidden = true; det.open = false; el._sid = null; }
+  }
+  vendorKey = key;
+}
+
+async function loadAttendance(el, sid) {
+  try {
+    const rows = await call("admin", `/api/admin/session/${sid}/attendance`);
+    el.querySelector('[data-k="attlist"]').innerHTML = rows.length ? rows.map((r) =>
+      `<li><div class="what"><b>${esc(r.name)}</b> <span class="mono small muted">${esc(r.roll_no)}</span></div><span class="small muted">${esc(fmtTime(r.ts))}</span></li>`).join("")
+      : '<li class="muted">Nobody yet.</li>';
+  } catch (e) { if (e instanceof AuthError) showLogin(); }
+}
+
+$("#devs").addEventListener("toggle", (ev) => {
+  const det = ev.target;
+  if (det.tagName === "DETAILS" && det.open) { const el = det.closest("[data-dev]"); if (el && el._sid) loadAttendance(el, el._sid); }
+}, true);
+
+$("#devs").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-act]");
+  if (!btn) return;
+  const el = btn.closest("[data-dev]"), id = el.dataset.dev, act = btn.dataset.act;
+  const title = el.querySelector('[data-k="title"]').value.trim();
+  btn.disabled = true;
+  try {
+    if (act === "class" || act === "meal") {
+      if (!title) { toast("Give the " + act + " a name first", true); return; }
+      await call("admin", "/api/admin/session/open", "POST", { device_id: id, kind: act, title });
+      toast((act === "class" ? "Class" : "Meal") + " started");
+    } else if (act === "vendor") {
+      const v = Number(el.querySelector('[data-k="vendor"]').value);
+      if (!v) { toast("Pick a vendor", true); return; }
+      await call("admin", `/api/admin/device/${encodeURIComponent(id)}/mode`, "POST", { mode: "vendor", vendor_id: v });
+      toast("Payments on");
+    } else {
+      await call("admin", `/api/admin/device/${encodeURIComponent(id)}/mode`, "POST", { mode: "idle" });
+      toast("Reader idle");
+    }
+    await refreshOverview(); await refreshFeed();
+  } catch (e) { if (e instanceof AuthError) showLogin(); else toast(e.message, true); }
+  finally { btn.disabled = false; }
+});
+
+/* ---------------------------------------------------------------- card registration */
+function renderUnregistered(ov) {
+  const opts = ov.students.map((s) => `<option value="${esc(s.roll_no)}">${esc(s.roll_no)} · ${esc(s.name)}</option>`).join("");
+  const key = JSON.stringify(ov.unregistered) + "|" + opts;
+  if (key === unregKey) return;
+  unregKey = key;
+  const box = $("#unreg");
+  if (!ov.unregistered.length) {
+    box.innerHTML = '<p class="muted small" style="margin:0">No unknown cards yet. Tap a new card on a reader and it appears here.</p>';
+    return;
+  }
+  box.innerHTML = ov.unregistered.map((u) => `
+    <div class="row" style="margin-bottom:10px" data-uid="${esc(u.uid)}">
+      <span class="mono" style="flex:1 1 140px">${esc(u.uid)}<br><span class="small muted" style="font-family:var(--sans)">seen ${esc(fmtTime(u.ts))}</span></span>
+      <select style="flex:1 1 170px" aria-label="Student">${opts}</select>
+      <button class="btn sm primary" type="button" data-reg="1">Register</button>
+    </div>`).join("");
+}
+
+$("#unreg").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-reg]");
+  if (!btn) return;
+  const row = btn.closest("[data-uid]");
+  btn.disabled = true;
+  try {
+    await call("admin", "/api/admin/card/register", "POST",
+      { uid: row.dataset.uid, roll_no: row.querySelector("select").value, replace: $("#replace").checked });
+    toast("Card registered");
+    unregKey = "";
+    await refreshOverview();
+  } catch (e) { if (e instanceof AuthError) showLogin(); else toast(e.message, true); }
+  finally { btn.disabled = false; }
+});
+
+/* ---------------------------------------------------------------- live feed */
+function rowFor(e) {
+  const cls = e.ok ? "ok" : (WARN.has(e.code) ? "warn" : "bad");
+  const who = e.student || (e.uid ? "…" + e.uid.slice(-4) : "-");
+  const kind = e.kind === "tap" ? "" : `<span class="small muted">${esc(e.kind)} </span>`;
+  return `<tr><td class="mono small">${esc(fmtTime(e.ts))}</td><td class="mono small">${esc(e.device_id || "-")}</td>
+    <td>${esc(who)}</td><td class="nw">${kind}<span class="badge ${cls}">${esc(codeText(e.code))}</span></td><td class="small muted">${esc(e.detail)}</td></tr>`;
+}
+
+async function refreshFeed() {
+  let rows;
+  try { rows = await call("admin", "/api/admin/events" + (lastId == null ? "" : "?after_id=" + lastId)); } catch (e) { guard(e); }
+  if (!rows.length) return;
+  const body = $("#feed");
+  for (const e of rows) body.insertAdjacentHTML("afterbegin", rowFor(e));
+  while (body.rows.length > 80) body.deleteRow(body.rows.length - 1);
+  lastId = rows[rows.length - 1].id;
+}
+
+$("#out").addEventListener("click", () => logout("admin", showLogin));
+if (store.get("campus.token.admin")) showDash(); else showLogin();
+</script>
+</body>
+</html>

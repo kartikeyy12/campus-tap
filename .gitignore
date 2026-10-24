@@ -1,0 +1,11 @@
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+firmware/reader/config.h
+.venv/
+venv/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store

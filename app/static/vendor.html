@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vendor | Campus Card</title>
+<link rel="stylesheet" href="/static/common.css">
+</head>
+<body>
+<main class="wrap narrow">
+  <div id="login"></div>
+
+  <div id="dash" hidden>
+    <header class="top">
+      <span class="brand" id="who">Vendor</span>
+      <span class="spacer"></span>
+      <button class="btn sm ghost" id="out" type="button">Sign out</button>
+    </header>
+    <div class="small muted" id="term" style="padding:10px 0 0"></div>
+
+    <section class="sec">
+      <span class="label">Collected</span>
+      <div class="big" id="bal">&nbsp;</div>
+    </section>
+
+    <section class="sec">
+      <form id="cf" autocomplete="off">
+        <label class="label" for="amt">Amount in rupees</label>
+        <input class="input amount" id="amt" type="number" inputmode="numeric" min="1" step="1" placeholder="0" required>
+        <div class="chips" id="chips" style="margin:12px 0 16px">
+          <button class="chip" type="button" data-amt="10">10</button>
+          <button class="chip" type="button" data-amt="20">20</button>
+          <button class="chip" type="button" data-amt="50">50</button>
+          <button class="chip" type="button" data-amt="100">100</button>
+        </div>
+        <div class="row" style="flex-wrap:nowrap">
+          <button class="btn primary" id="go" type="submit" style="flex:2">Charge</button>
+          <button class="btn" id="cancel" type="button" style="flex:1" disabled>Cancel</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="terminal idle" id="panel" aria-live="polite"></section>
+
+    <section class="sec">
+      <h2>Recent sales</h2>
+      <ul class="list" id="sales"></ul>
+    </section>
+  </div>
+</main>
+
+<script src="/static/common.js"></script>
+<script>
+let stop = null, maxTtl = {}, maxTxn = 500, hasTerminal = false;
+
+function showLogin() {
+  if (stop) { stop(); stop = null; }
+  $("#dash").hidden = true;
+  $("#login").hidden = false;
+  mountLogin({ role: "vendor", title: "Sign in", hint: "Use your vendor name and PIN.",
+               identLabel: "Vendor name", onDone: showDash });
+}
+
+function showDash() {
+  $("#login").hidden = true;
+  $("#login").innerHTML = "";
+  $("#dash").hidden = false;
+  if (stop) stop();
+  stop = every(1000, refresh);
+}
+
+async function refresh() {
+  let me;
+  try { me = await call("vendor", "/api/vendor/me"); }
+  catch (e) { if (e instanceof AuthError) showLogin(); throw e; }
+  render(me);
+}
+
+function setPanel(cls, html) {
+  const p = $("#panel");
+  p.className = "terminal " + cls;
+  p.innerHTML = html;
+}
+
+function render(me) {
+  maxTxn = me.max_txn;
+  $("#who").textContent = me.name;
+  $("#bal").textContent = rupees(me.balance);
+  hasTerminal = !!me.device;
+  $("#term").innerHTML = me.device
+    ? `<span class="row" style="gap:8px"><span class="dot ${me.device.online ? "on" : ""}"></span>Reader <span class="mono">${esc(me.device.id)}</span> ${me.device.online ? "online" : "offline"}</span>`
+    : "No reader assigned. Ask the admin to assign one.";
+  $("#go").disabled = !hasTerminal;
+
+  const ch = me.charge;
+  $("#cancel").disabled = !(ch && ch.status === "armed");
+  if (!ch) {
+    setPanel("idle", '<div class="state">Ready</div><div class="muted">Enter an amount to start.</div>');
+  } else if (ch.status === "armed") {
+    maxTtl[ch.id] = Math.max(maxTtl[ch.id] || 0, ch.ttl);
+    const pct = Math.max(0, Math.min(100, (ch.ttl / (maxTtl[ch.id] || 30)) * 100));
+    setPanel("armed", `<div class="ring" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="huge">${rupees(ch.amount)}</div>
+      <div class="muted">Waiting for the student to tap <span class="num">${Math.ceil(ch.ttl)}s</span></div>
+      <div class="progress ${ch.ttl < 8 ? "warn" : ""}"><i style="width:${pct}%"></i></div>`);
+  } else if (ch.status === "completed") {
+    const s = me.sales && me.sales[0];
+    setPanel("ok", `<div class="huge">${rupees(ch.amount)}</div><div class="state">Paid</div><div class="muted">${s ? "from " + esc(s.student) : ""}</div>`);
+  } else if (ch.status === "expired") {
+    setPanel("bad", `<div class="state">Charge expired</div><div class="muted">${rupees(ch.amount)} was not paid in time.</div>`);
+  } else {
+    setPanel("idle", `<div class="state">Cancelled</div><div class="muted">${rupees(ch.amount)}</div>`);
+  }
+
+  const ul = $("#sales");
+  ul.innerHTML = me.sales.length ? me.sales.map((s) =>
+    `<li><div class="what"><div><b>${esc(s.student)}</b></div><div class="small muted">${esc(fmtTime(s.ts))}</div></div>
+     <span class="plus num">+${rupees(s.amount)}</span></li>`).join("") : '<li class="muted">No sales yet.</li>';
+}
+
+$("#out").addEventListener("click", () => logout("vendor", showLogin));
+
+$("#chips").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-amt]");
+  if (b) { $("#amt").value = b.dataset.amt; $("#amt").focus(); }
+});
+
+$("#cf").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const amount = Number($("#amt").value);
+  if (!Number.isInteger(amount) || amount < 1 || amount > maxTxn) {
+    toast("Enter a whole amount from 1 to " + maxTxn, true);
+    return;
+  }
+  const b = $("#go"); b.disabled = true;
+  try { await call("vendor", "/api/vendor/charge", "POST", { amount }); $("#amt").value = ""; await refresh(); }
+  catch (e) { toast(e.message, true); }
+  finally { b.disabled = !hasTerminal; }
+});
+
+$("#cancel").addEventListener("click", async () => {
+  try { await call("vendor", "/api/vendor/charge/cancel", "POST"); await refresh(); }
+  catch (e) { toast(e.message, true); }
+});
+
+if (store.get("campus.token.vendor")) showDash(); else showLogin();
+</script>
+</body>
+</html>
