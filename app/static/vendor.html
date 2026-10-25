@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vendor | Campus Card</title>
+<meta name="theme-color" content="#2c33f0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232c33f0'/%3E%3Cg fill='none' stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 22a4 4 0 0 1 4 4'/%3E%3Cpath d='M6 15a11 11 0 0 1 11 11'/%3E%3Cpath d='M6 8a18 18 0 0 1 18 18'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/common.css">
 </head>
 <body>
@@ -16,35 +18,33 @@
       <span class="spacer"></span>
       <button class="btn sm ghost" id="out" type="button">Sign out</button>
     </header>
-    <div class="small muted" id="term" style="padding:10px 0 0"></div>
 
-    <section class="sec">
-      <span class="label">Collected</span>
-      <div class="big" id="bal">&nbsp;</div>
-    </section>
+    <section class="screen idle" id="panel" aria-live="polite"></section>
 
-    <section class="sec">
-      <form id="cf" autocomplete="off">
-        <label class="label" for="amt">Amount in rupees</label>
-        <input class="input amount" id="amt" type="number" inputmode="numeric" min="1" step="1" placeholder="0" required>
-        <div class="chips" id="chips" style="margin:12px 0 16px">
-          <button class="chip" type="button" data-amt="10">10</button>
-          <button class="chip" type="button" data-amt="20">20</button>
-          <button class="chip" type="button" data-amt="50">50</button>
-          <button class="chip" type="button" data-amt="100">100</button>
-        </div>
-        <div class="row" style="flex-wrap:nowrap">
-          <button class="btn primary" id="go" type="submit" style="flex:2">Charge</button>
-          <button class="btn" id="cancel" type="button" style="flex:1" disabled>Cancel</button>
-        </div>
-      </form>
-    </section>
+    <div class="row between" style="margin:14px 2px 0">
+      <span class="small muted" id="term"></span>
+      <span class="small muted">Collected <b class="num" id="bal" style="color:var(--ink)"></b></span>
+    </div>
 
-    <section class="terminal idle" id="panel" aria-live="polite"></section>
+    <form id="cf" autocomplete="off">
+      <div class="amtbox"><span class="cur">&#8377;</span>
+        <input id="amt" type="text" inputmode="none" maxlength="4" placeholder="0" aria-label="Amount in rupees" autocomplete="off">
+      </div>
+      <div class="keypad" id="keys">
+        <button class="key" type="button" data-k="1">1</button><button class="key" type="button" data-k="2">2</button><button class="key" type="button" data-k="3">3</button>
+        <button class="key" type="button" data-k="4">4</button><button class="key" type="button" data-k="5">5</button><button class="key" type="button" data-k="6">6</button>
+        <button class="key" type="button" data-k="7">7</button><button class="key" type="button" data-k="8">8</button><button class="key" type="button" data-k="9">9</button>
+        <button class="key fn" type="button" data-k="C" aria-label="Clear">Clear</button><button class="key" type="button" data-k="0">0</button><button class="key fn" type="button" data-k="B" aria-label="Delete last digit">Delete</button>
+      </div>
+      <div class="row" style="flex-wrap:nowrap">
+        <button class="btn primary" id="go" type="submit" style="flex:2">Charge</button>
+        <button class="btn" id="cancel" type="button" style="flex:1" disabled>Cancel</button>
+      </div>
+    </form>
 
-    <section class="sec">
+    <section class="group">
       <h2>Recent sales</h2>
-      <ul class="list" id="sales"></ul>
+      <div class="panel"><ul class="list" id="sales"></ul></div>
     </section>
   </div>
 </main>
@@ -78,7 +78,7 @@ async function refresh() {
 
 function setPanel(cls, html) {
   const p = $("#panel");
-  p.className = "terminal " + cls;
+  p.className = "screen " + cls;
   p.innerHTML = html;
 }
 
@@ -95,21 +95,21 @@ function render(me) {
   const ch = me.charge;
   $("#cancel").disabled = !(ch && ch.status === "armed");
   if (!ch) {
-    setPanel("idle", '<div class="state">Ready</div><div class="muted">Enter an amount to start.</div>');
+    setPanel("idle", '<div class="state">Ready</div><div class="sub">Enter an amount and press Charge.</div>');
   } else if (ch.status === "armed") {
     maxTtl[ch.id] = Math.max(maxTtl[ch.id] || 0, ch.ttl);
     const pct = Math.max(0, Math.min(100, (ch.ttl / (maxTtl[ch.id] || 30)) * 100));
     setPanel("armed", `<div class="ring" aria-hidden="true"><i></i><i></i><i></i></div>
-      <div class="huge">${rupees(ch.amount)}</div>
-      <div class="muted">Waiting for the student to tap <span class="num">${Math.ceil(ch.ttl)}s</span></div>
+      <div class="fig-amount">${rupeesHtml(ch.amount)}</div>
+      <div class="sub">Waiting for the student to tap, <span class="num">${Math.ceil(ch.ttl)}s</span> left</div>
       <div class="progress ${ch.ttl < 8 ? "warn" : ""}"><i style="width:${pct}%"></i></div>`);
   } else if (ch.status === "completed") {
     const s = me.sales && me.sales[0];
-    setPanel("ok", `<div class="huge">${rupees(ch.amount)}</div><div class="state">Paid</div><div class="muted">${s ? "from " + esc(s.student) : ""}</div>`);
+    setPanel("ok", `<div class="fig-amount">${rupeesHtml(ch.amount)}</div><div class="state">Paid</div><div class="sub">${s ? "from " + esc(s.student) : ""}</div>`);
   } else if (ch.status === "expired") {
-    setPanel("bad", `<div class="state">Charge expired</div><div class="muted">${rupees(ch.amount)} was not paid in time.</div>`);
+    setPanel("bad", `<div class="state">Charge expired</div><div class="sub">${rupees(ch.amount)} was not paid in time.</div>`);
   } else {
-    setPanel("idle", `<div class="state">Cancelled</div><div class="muted">${rupees(ch.amount)}</div>`);
+    setPanel("idle", `<div class="state">Cancelled</div><div class="sub">${rupees(ch.amount)}</div>`);
   }
 
   const ul = $("#sales");
@@ -120,10 +120,14 @@ function render(me) {
 
 $("#out").addEventListener("click", () => logout("vendor", showLogin));
 
-$("#chips").addEventListener("click", (ev) => {
-  const b = ev.target.closest("[data-amt]");
-  if (b) { $("#amt").value = b.dataset.amt; $("#amt").focus(); }
-});
+function pressKey(k) {
+  const el = $("#amt");
+  if (k === "C") el.value = "";
+  else if (k === "B") el.value = el.value.slice(0, -1);
+  else if (/^\d$/.test(k) && el.value.length < 4) el.value = (el.value + k).replace(/^0+(?=\d)/, "");
+}
+$("#keys").addEventListener("click", (ev) => { const b = ev.target.closest("[data-k]"); if (b) pressKey(b.dataset.k); });
+$("#amt").addEventListener("input", (ev) => { ev.target.value = ev.target.value.replace(/\D/g, "").slice(0, 4).replace(/^0+(?=\d)/, ""); });
 
 $("#cf").addEventListener("submit", async (ev) => {
   ev.preventDefault();

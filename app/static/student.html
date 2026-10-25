@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Student | Campus Card</title>
+<meta name="theme-color" content="#2c33f0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232c33f0'/%3E%3Cg fill='none' stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 22a4 4 0 0 1 4 4'/%3E%3Cpath d='M6 15a11 11 0 0 1 11 11'/%3E%3Cpath d='M6 8a18 18 0 0 1 18 18'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/common.css">
 </head>
 <body>
@@ -17,41 +19,56 @@
       <button class="btn sm ghost" id="out" type="button">Sign out</button>
     </header>
 
-    <div class="who"><h1 id="who">Student</h1><div class="sub mono muted" id="roll"></div></div>
+    <div class="idcard" id="idcard">
+      <svg class="waves" viewBox="0 0 300 300" aria-hidden="true"><circle cx="300" cy="300" r="70"/><circle cx="300" cy="300" r="120"/><circle cx="300" cy="300" r="170"/><circle cx="300" cy="300" r="220"/></svg>
+      <div class="idc-top">
+        <span class="idc-brand">NIT Goa</span>
+        <svg class="idc-chip" viewBox="0 0 42 32" aria-hidden="true"><rect x=".75" y=".75" width="40.5" height="30.5" rx="6" fill="#e6d49b" stroke="#c9b46c" stroke-width="1.5"/><path d="M1 11h13M1 21h13M28 11h13M28 21h13M14 1v30M28 1v30M14 11v10h14V11z" fill="none" stroke="#c9b46c" stroke-width="1.2"/></svg>
+      </div>
+      <div>
+        <div class="idc-k">Balance</div>
+        <div class="idc-n num" id="bal">&nbsp;</div>
+      </div>
+      <div class="idc-bot">
+        <div><div class="idc-name" id="who">Student</div><div class="idc-roll mono" id="roll"></div></div>
+        <div class="idc-tail mono" id="cuid"></div>
+      </div>
+      <div class="idc-stamp" aria-hidden="true">Blocked</div>
+    </div>
 
-    <section class="sec">
-      <span class="label">Balance</span>
-      <div class="big" id="bal">&nbsp;</div>
-      <div class="small muted" style="margin:16px 0 8px">Spent today <span id="spent" class="num"></span> of <span id="cap" class="num"></span></div>
+    <div class="limit">
+      <div class="row"><span>Spent today</span><span><b class="num" id="spent"></b> of <span class="num" id="cap"></span></span></div>
       <div class="progress" id="prog"><i></i></div>
-    </section>
+    </div>
 
-    <section class="sec">
+    <section class="group">
       <h2>Card</h2>
-      <div class="row between"><span class="badge" id="cstat">&nbsp;</span><span class="mono small muted" id="cuid"></span></div>
-      <p class="small muted" id="chelp" style="margin:10px 0 0"></p>
-      <button class="btn danger block" id="blk" type="button" style="margin-top:14px" hidden>Block card</button>
-      <form id="unb" hidden style="margin-top:14px" autocomplete="off">
-        <label class="field">PIN
-          <input class="input" id="unb-pin" type="password" inputmode="numeric" required>
-        </label>
-        <button class="btn primary block" type="submit">Unblock card</button>
-      </form>
+      <div class="panel">
+        <div class="row between"><span class="badge" id="cstat">&nbsp;</span>
+          <button class="btn sm danger" id="blk" type="button" hidden>Block card</button></div>
+        <p class="small muted" id="chelp" style="margin:10px 0 0"></p>
+        <form id="unb" hidden style="margin-top:14px" autocomplete="off">
+          <label class="field">PIN
+            <input class="input" id="unb-pin" type="password" inputmode="numeric" required>
+          </label>
+          <button class="btn primary block" type="submit">Unblock card</button>
+        </form>
+      </div>
     </section>
 
-    <section class="sec">
+    <section class="group">
       <h2>Add credit</h2>
       <div class="chips" id="chips">
         <button class="chip" type="button" data-amt="100">&#8377;100</button>
         <button class="chip" type="button" data-amt="200">&#8377;200</button>
         <button class="chip" type="button" data-amt="500">&#8377;500</button>
       </div>
-      <p class="small muted" style="margin:12px 0 0">Demo credit. No real money moves.</p>
+      <p class="small muted" style="margin:10px 2px 0">Demo credit. No real money moves.</p>
     </section>
 
-    <section class="sec">
+    <section class="group">
       <h2>Activity</h2>
-      <ul class="list" id="hist"></ul>
+      <div class="panel"><ul class="list" id="hist"></ul></div>
     </section>
   </div>
 </main>
@@ -87,8 +104,11 @@ const KIND = { payment: "Payment", topup: "Credit added", attendance: "Attendanc
 
 function render(me) {
   $("#who").textContent = me.name;
+  const ic = $("#idcard");
+  ic.classList.toggle("blocked", !!(me.card && me.card.status === "blocked"));
+  ic.classList.toggle("nocard", !me.card);
   $("#roll").textContent = me.roll_no;
-  $("#bal").textContent = rupees(me.balance);
+  $("#bal").innerHTML = rupeesHtml(me.balance);
   $("#spent").textContent = rupees(me.spent_today);
   $("#cap").textContent = rupees(me.limits.daily_cap);
   const pct = Math.min(100, Math.round((me.spent_today / me.limits.daily_cap) * 100));
@@ -104,24 +124,28 @@ function render(me) {
     $("#chelp").textContent = "No card is linked yet. Ask the admin to register it.";
   } else if (card.status === "blocked") {
     badge.textContent = "Blocked"; badge.classList.add("bad");
-    $("#cuid").textContent = "ending " + card.uid_tail;
+    $("#cuid").textContent = "\u2022\u2022\u2022\u2022 " + card.uid_tail;
     $("#blk").hidden = true; $("#unb").hidden = false;
-    $("#chelp").textContent = "Blocked. Enter your PIN to use it again.";
+    $("#chelp").textContent = "Nobody can use this card until you unblock it with your PIN.";
   } else {
     badge.textContent = "Active"; badge.classList.add("ok");
-    $("#cuid").textContent = "ending " + card.uid_tail;
+    $("#cuid").textContent = "\u2022\u2022\u2022\u2022 " + card.uid_tail;
     $("#blk").hidden = false; $("#unb").hidden = true;
     $("#chelp").textContent = "If you lose it, block it here. It stops working on the next tap.";
   }
 
   const ul = $("#hist");
   if (!me.history.length) { ul.innerHTML = '<li class="muted">No activity yet. Tap your card at a reader.</li>'; return; }
-  ul.innerHTML = me.history.map((h) => {
+  let last = "", html = "";
+  for (const h of me.history) {
+    const day = dayLabel(h.ts);
+    if (day !== last) { html += `<li class="dayhead">${esc(day)}</li>`; last = day; }
     const amt = h.amount == null ? "" :
-      `<span class="${h.amount > 0 ? "plus" : "minus"} num">${h.amount > 0 ? "+" : "−"}${rupees(Math.abs(h.amount))}</span>`;
-    return `<li><div class="what"><div><b>${esc(KIND[h.type] || h.type)}</b></div>
-      <div class="small muted">${esc(h.text)} &middot; ${esc(fmtDay(h.ts))}</div></div>${amt}</li>`;
-  }).join("");
+      `<span class="${h.amount > 0 ? "plus" : "minus"} num">${h.amount > 0 ? "+" : "\u2212"}${rupees(Math.abs(h.amount))}</span>`;
+    html += `<li class="has-ico">${icon(h.type)}<div class="what"><div><b>${esc(KIND[h.type] || h.type)}</b></div>
+      <div>${esc(h.text)} &middot; ${esc(fmtHM(h.ts))}</div></div>${amt}</li>`;
+  }
+  ul.innerHTML = html;
 }
 
 $("#out").addEventListener("click", () => logout("student", showLogin));

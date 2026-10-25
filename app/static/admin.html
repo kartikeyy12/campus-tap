@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Admin | Campus Card</title>
+<meta name="theme-color" content="#2c33f0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232c33f0'/%3E%3Cg fill='none' stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 22a4 4 0 0 1 4 4'/%3E%3Cpath d='M6 15a11 11 0 0 1 11 11'/%3E%3Cpath d='M6 8a18 18 0 0 1 18 18'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/common.css">
 </head>
 <body>
@@ -21,27 +23,27 @@
 
     <div id="warns"></div>
 
-    <div class="figures" id="stats"></div>
+    <div class="panel"><div class="figures" id="stats"></div></div>
 
-    <div class="grid console" style="margin-top:22px">
-      <section>
-        <h2 class="label">Readers</h2>
+    <div class="grid console" style="margin-top:14px">
+      <section class="panel">
+        <h2>Readers</h2>
         <div id="devs"></div>
       </section>
-      <section>
-        <h2 class="label">Live activity</h2>
+      <section class="panel">
+        <h2>Live activity</h2>
         <div class="feed scroll"><table class="t"><thead><tr><th>Time</th><th>Reader</th><th>Who</th><th>Result</th><th>Detail</th></tr></thead><tbody id="feed"></tbody></table></div>
       </section>
     </div>
 
-    <div class="grid two" style="margin-top:34px">
-      <section>
-        <h2 class="label">Register a card</h2>
+    <div class="grid two" style="margin-top:14px">
+      <section class="panel">
+        <h2>Register a card</h2>
         <div id="unreg"></div>
         <label class="row small muted" style="margin-top:12px"><input type="checkbox" id="replace"> Replace the student's current card</label>
       </section>
-      <section>
-        <h2 class="label">Students</h2>
+      <section class="panel">
+        <h2>Students</h2>
         <div class="scroll"><table class="t"><thead><tr><th>Roll</th><th>Name</th><th>Card</th></tr></thead><tbody id="studs"></tbody></table></div>
       </section>
     </div>
@@ -102,10 +104,10 @@ function ensureDevice(d) {
   el = document.createElement("div");
   el.className = "reader"; el.dataset.dev = d.id;
   el.innerHTML = `
-    <div class="row between"><div class="row" style="gap:8px"><span class="dot" data-k="dot"></span><b class="mono" style="font-weight:500">${esc(d.id)}</b></div><span class="badge" data-k="mode"></span></div>
+    <div class="row between"><div class="row" style="gap:8px"><span class="dot" data-k="dot"></span><b class="mono" style="font-weight:500">${esc(d.id)}</b></div><span class="modechip" data-k="mode"></span></div>
     <div class="small muted" data-k="status" style="margin:6px 0 12px"></div>
     <div class="row">
-      <input class="input" data-k="title" placeholder="Class or meal name" maxlength="40" style="flex:1 1 150px" aria-label="Class or meal name">
+      <input class="input" data-k="title" placeholder="Class or meal name" maxlength="40" style="flex:1 1 100%" aria-label="Class or meal name">
       <button class="btn sm primary" type="button" data-act="class">Start class</button>
       <button class="btn sm primary" type="button" data-act="meal">Start meal</button>
     </div>
@@ -126,7 +128,7 @@ function renderDevices(ov) {
     const k = (n) => el.querySelector(`[data-k="${n}"]`);
     k("dot").className = "dot" + (d.online ? " on" : "");
     const m = k("mode"); m.textContent = MODE_LABEL[d.mode] || d.mode;
-    m.className = "badge " + (d.mode === "idle" ? "" : "ok");
+    m.className = "modechip" + (d.mode === "idle" ? "" : " live");
     let st = d.online ? "Online" : "Offline, no heartbeat";
     if (d.session) st += ` · ${d.session.kind === "class" ? "Class" : "Meal"}: ${d.session.title}`;
     if (d.mode === "vendor") st += ` · ${d.vendor_name || "vendor"}${d.charge ? " · charge " + rupees(d.charge.amount) + " armed" : ""}`;
@@ -223,11 +225,11 @@ $("#unreg").addEventListener("click", async (ev) => {
 });
 
 /* ---------------------------------------------------------------- live feed */
-function rowFor(e) {
+function rowFor(e, fresh) {
   const cls = e.ok ? "ok" : (WARN.has(e.code) ? "warn" : "bad");
   const who = e.student || (e.uid ? "…" + e.uid.slice(-4) : "-");
   const kind = e.kind === "tap" ? "" : `<span class="small muted">${esc(e.kind)} </span>`;
-  return `<tr><td class="mono small">${esc(fmtTime(e.ts))}</td><td class="mono small">${esc(e.device_id || "-")}</td>
+  return `<tr${fresh ? ' class="fresh"' : ""}><td class="mono small">${esc(fmtTime(e.ts))}</td><td class="mono small">${esc(e.device_id || "-")}</td>
     <td>${esc(who)}</td><td class="nw">${kind}<span class="badge ${cls}">${esc(codeText(e.code))}</span></td><td class="small muted">${esc(e.detail)}</td></tr>`;
 }
 
@@ -236,7 +238,8 @@ async function refreshFeed() {
   try { rows = await call("admin", "/api/admin/events" + (lastId == null ? "" : "?after_id=" + lastId)); } catch (e) { guard(e); }
   if (!rows.length) return;
   const body = $("#feed");
-  for (const e of rows) body.insertAdjacentHTML("afterbegin", rowFor(e));
+  const fresh = lastId != null;
+  for (const e of rows) body.insertAdjacentHTML("afterbegin", rowFor(e, fresh));
   while (body.rows.length > 80) body.deleteRow(body.rows.length - 1);
   lastId = rows[rows.length - 1].id;
 }

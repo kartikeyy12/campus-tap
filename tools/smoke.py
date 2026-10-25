@@ -84,7 +84,15 @@ class Smoke:
         dev = self.a.device
         ov = self.get("/api/admin/overview", admin)
         vendor_id = next(v["id"] for v in ov["vendors"] if v["name"] == "Campus Canteen")
-        bal0 = self.get("/api/student/me", stud_a)["balance"]
+        me = self.get("/api/student/me", stud_a)
+        if me["card"] and me["card"]["status"] == "blocked":
+            self.post("/api/student/card/block", stud_a, {"blocked": False, "pin": "1234"})
+            print(f"Card of {ROLL_A} was blocked from an earlier test, unblocked it first")
+        while me["balance"] < 150:   # earlier runs spend credit; the story needs room for a few payments
+            self.post("/api/student/topup", stud_a, {"amount": 200})
+            me = self.get("/api/student/me", stud_a)
+            print(f"Balance was low, added Rs 200 demo credit")
+        bal0 = me["balance"]
         print(f"Starting balance for {ROLL_A}: Rs {bal0}")
 
         print("Mess")

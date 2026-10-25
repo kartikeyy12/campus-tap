@@ -3,16 +3,87 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2c33f0">
 <title>Campus Card</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232c33f0'/%3E%3Cg fill='none' stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 22a4 4 0 0 1 4 4'/%3E%3Cpath d='M6 15a11 11 0 0 1 11 11'/%3E%3Cpath d='M6 8a18 18 0 0 1 18 18'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/common.css">
+<script>
+  /* Play the intro once per browser session, and never for people who ask for less motion. */
+  (function () {
+    var skip = false;
+    try { skip = sessionStorage.getItem("campus.intro") === "1"; } catch (e) {}
+    if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) skip = true;
+    if (skip) document.documentElement.classList.add("no-intro");
+  })();
+</script>
 </head>
-<body>
-<main class="wrap narrow index">
-  <h1>Campus Card</h1>
-  <p class="lede">One tap for attendance, meals and payments.</p>
-  <a class="entry" href="/student"><b>Student</b><span>Balance and card</span></a>
-  <a class="entry" href="/vendor"><b>Vendor</b><span>Take a payment</span></a>
-  <a class="entry" href="/admin"><b>Admin</b><span>Readers, sessions, activity</span></a>
+<body class="landing">
+
+<div class="intro" id="intro" aria-hidden="true">
+  <div class="intro-stage">
+    <div class="intro-card idcard">
+      <svg class="waves" viewBox="0 0 300 300" aria-hidden="true"><circle cx="300" cy="300" r="70"/><circle cx="300" cy="300" r="120"/><circle cx="300" cy="300" r="170"/><circle cx="300" cy="300" r="220"/></svg>
+      <div class="idc-top">
+        <span class="idc-brand">NIT Goa</span>
+        <svg class="idc-chip" viewBox="0 0 42 32"><rect x=".75" y=".75" width="40.5" height="30.5" rx="6" fill="#e6d49b" stroke="#c9b46c" stroke-width="1.5"/><path d="M1 11h13M1 21h13M28 11h13M28 21h13M14 1v30M28 1v30M14 11v10h14V11z" fill="none" stroke="#c9b46c" stroke-width="1.2"/></svg>
+      </div>
+      <span class="intro-ripple"><i></i><i></i></span>
+    </div>
+    <div class="intro-check"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5"/><path d="m7.5 12.5 3 3 6-6.5"/></svg></div>
+    <div class="intro-word">Campus Card</div>
+  </div>
+</div>
+
+<main class="wrap index">
+  <section class="index-copy">
+    <h1>One card for the whole campus.</h1>
+    <p class="lede">Attendance, mess meals and payments, all from a single tap.</p>
+    <a class="entry" href="/student"><span><b>Student</b><em>Your card and balance</em></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a>
+    <a class="entry" href="/vendor"><span><b>Vendor</b><em>Take a payment</em></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a>
+    <a class="entry" href="/admin"><span><b>Admin</b><em>Readers, sessions and activity</em></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a>
+  </section>
+  <section class="index-card" aria-hidden="true">
+    <div class="idcard tilt" id="demo-card">
+      <svg class="waves" viewBox="0 0 300 300"><circle cx="300" cy="300" r="70"/><circle cx="300" cy="300" r="120"/><circle cx="300" cy="300" r="170"/><circle cx="300" cy="300" r="220"/></svg>
+      <div class="idc-top">
+        <span class="idc-brand">NIT Goa</span>
+        <svg class="idc-chip" viewBox="0 0 42 32"><rect x=".75" y=".75" width="40.5" height="30.5" rx="6" fill="#e6d49b" stroke="#c9b46c" stroke-width="1.5"/><path d="M1 11h13M1 21h13M28 11h13M28 21h13M14 1v30M28 1v30M14 11v10h14V11z" fill="none" stroke="#c9b46c" stroke-width="1.2"/></svg>
+      </div>
+      <div><div class="idc-k">Balance</div><div class="idc-n"><span class="cur">&#8377;</span>250</div></div>
+      <div class="idc-bot"><div><div class="idc-name">Student name</div><div class="idc-roll mono">24ECE0000</div></div><div class="idc-tail mono">&bull;&bull;&bull;&bull; 0000</div></div>
+    </div>
+    <p class="small muted" style="text-align:center;margin:18px 0 0">Sample card</p>
+  </section>
 </main>
+
+<script>
+(function () {
+  var intro = document.getElementById("intro");
+  var card = document.getElementById("demo-card");
+  function done() {
+    if (!intro) return;
+    var el = intro; intro = null;
+    el.classList.add("leaving");
+    try { sessionStorage.setItem("campus.intro", "1"); } catch (e) {}
+    setTimeout(function () { el.remove(); document.documentElement.classList.add("no-intro"); }, 450);
+  }
+  if (document.documentElement.classList.contains("no-intro")) { if (intro) intro.remove(); intro = null; }
+  else {
+    setTimeout(done, 2900);
+    intro.addEventListener("click", done);
+    document.addEventListener("keydown", done, { once: true });
+  }
+  /* Card follows the pointer a little. Only on a real mouse, never with reduced motion. */
+  if (card && matchMedia("(hover: hover) and (prefers-reduced-motion: no-preference)").matches) {
+    var host = card.parentElement;
+    host.addEventListener("pointermove", function (e) {
+      var r = card.getBoundingClientRect();
+      var x = (e.clientX - r.left) / r.width - .5, y = (e.clientY - r.top) / r.height - .5;
+      card.style.transform = "perspective(900px) rotateY(" + (x * 9).toFixed(2) + "deg) rotateX(" + (-y * 9).toFixed(2) + "deg)";
+    });
+    host.addEventListener("pointerleave", function () { card.style.transform = ""; });
+  }
+})();
+</script>
 </body>
 </html>

@@ -58,6 +58,26 @@ function fmtDay(ts) {
   return new Date(ts * 1000).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST });
 }
 const rupees = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
+/* Same amount with a smaller rupee sign, for the big numerals. */
+const rupeesHtml = (n) => '<span class="cur">₹</span>' + Number(n || 0).toLocaleString("en-IN");
+function fmtHM(ts) {
+  if (!ts) return "";
+  return new Date(ts * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST });
+}
+function dayLabel(ts) {
+  const key = (t) => new Date(t * 1000).toLocaleDateString("en-CA", { timeZone: IST });
+  const now = Date.now() / 1000;
+  if (key(ts) === key(now)) return "Today";
+  if (key(ts) === key(now - 86400)) return "Yesterday";
+  return new Date(ts * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: IST });
+}
+const ICONS = {
+  payment: '<path d="M7 17 17 7M9 7h8v8"/>',
+  topup: '<path d="M12 5v14M5 12h14"/>',
+  attendance: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  meal: '<circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.5"/>',
+};
+const icon = (type) => `<span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24">${ICONS[type] || ICONS.attendance}</svg></span>`;
 
 /* Run fn now and then every ms. Pauses while the tab is hidden; a login error stops it. */
 function every(ms, fn) {
@@ -78,6 +98,7 @@ function mountLogin(cfg) {
   const box = $("#login");
   box.innerHTML = `
     <div class="login">
+      <div class="mark" aria-hidden="true"></div>
       <h1>${esc(cfg.title)}</h1>
       <p class="muted small" style="margin:0 0 22px">${esc(cfg.hint || "")}</p>
       <form id="lf" autocomplete="off">
